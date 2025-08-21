@@ -31,12 +31,14 @@ const zoomOutBtn = document.getElementById('zoom-out');
 const fitWidthBtn = document.getElementById('fit-width');
 const fitHeightBtn = document.getElementById('fit-height');
 const toggleViewModeBtn = document.getElementById('toggle-view-mode');
-const toggleRecordModeBtn = document.getElementById('toggle-record-mode');
+const modeToggle = document.getElementById('mode-toggle'); // 滑块开关
 
 const pdfContainer = document.getElementById('pdf-container');
 const pdfCanvas = document.getElementById('pdf-canvas');
 const notesListPanel = document.getElementById('notes-list-panel');
 const notesList = document.getElementById('notes-list');
+const currentPageEl = document.getElementById('current-page');
+const totalPagesEl = document.getElementById('total-pages');
 
 // --- 初始化 ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -58,6 +60,7 @@ async function showReaderPage(filename) {
     // 从文件名中提取 ID
     const fileId = filename.replace('.pdf', '');
     currentPdfFilename = filename; // 保持文件名用于后续操作
+    setDefaultMode(); // 设置默认为录音模式
     loadPdf(filename);
 }
 
@@ -75,7 +78,7 @@ function setupEventListeners() {
     fitWidthBtn.addEventListener('click', () => fitPdfToWidth());
     fitHeightBtn.addEventListener('click', () => fitPdfToHeight());
     toggleViewModeBtn.addEventListener('click', toggleViewMode);
-    toggleRecordModeBtn.addEventListener('click', toggleRecordMode);
+    modeToggle.addEventListener('change', toggleMode); // 滑块开关事件
 
     // PDF容器事件 (用于添加备注/录音)
     pdfContainer.addEventListener('mousedown', handleCanvasMouseDown);
@@ -188,13 +191,18 @@ async function loadPdf(filename) {
     currentPageNumber = 1;
     scale = 1.0;
     isDualPageMode = false;
-    isRecordMode = false;
-    updateRecordModeButton(); // 重置录音模式按钮状态
+    isRecordMode = true; // 默认设置为录音模式
+    modeToggle.checked = true; // 更新滑块状态
+    updateModeButton(); // 更新模式按钮状态
     
     try {
         const pdfData = await fetch(`/uploads/${filename}`).then(res => res.arrayBuffer());
         currentPdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
         numPages = currentPdfDoc.numPages;
+        
+        // 更新总页数显示
+        document.getElementById('total-pages').textContent = numPages;
+        
         await loadNotesData(fileId + '.json'); // 使用 ID 加载备注数据
         renderPage(currentPageNumber);
     } catch (error) {
@@ -246,6 +254,9 @@ function renderPage(pageNumber) {
     isRendering = true;
     const canvas = pdfCanvas;
     const ctx = canvas.getContext('2d');
+    
+    // 更新页码显示
+    document.getElementById('current-page').textContent = pageNumber;
     
     // 清除画布和旧的备注标记
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -323,19 +334,25 @@ function toggleViewMode() {
     // renderPage(currentPageNumber);
 }
 
-function toggleRecordMode() {
-    isRecordMode = !isRecordMode;
-    updateRecordModeButton();
+function toggleMode() {
+    isRecordMode = modeToggle.checked;
+    updateModeButton();
 }
 
-function updateRecordModeButton() {
+function updateModeButton() {
+    // 滑块状态已经通过 checked 属性反映，无需额外样式处理
     if (isRecordMode) {
-        toggleRecordModeBtn.style.backgroundColor = '#4CAF50'; // 高亮显示
-        toggleRecordModeBtn.style.color = 'white';
+        console.log("进入录音模式");
     } else {
-        toggleRecordModeBtn.style.backgroundColor = ''; // 恢复默认样式
-        toggleRecordModeBtn.style.color = '';
+        console.log("退出录音模式");
     }
+}
+
+// 设置默认模式为录音模式
+function setDefaultMode() {
+    isRecordMode = true;
+    modeToggle.checked = true;
+    updateModeButton();
 }
 
 // --- 备注逻辑 ---
@@ -400,13 +417,25 @@ function updateNotesList() {
         const listItem = document.createElement('li');
         listItem.className = `note-item ${note.type}`;
         
+        // 创建图标指示器
+        const indicator = document.createElement('div');
+        indicator.className = 'note-indicator';
+        
         if (note.type === 'text') {
-            listItem.style.borderLeft = `4px solid ${note.color}`;
-            listItem.innerHTML = `<strong>文字备注</strong> (${note.wordCount} 字)`;
-        } else if (note.type === 'audio') {
-            listItem.style.borderLeft = `4px solid #2196F3`;
-            listItem.innerHTML = `<strong>录音备注</strong> (${note.duration.toFixed(2)} 秒)`;
+            indicator.style.backgroundColor = note.color;
         }
+        // 录音备注的图标已在CSS中定义
+        
+        const text = document.createElement('span');
+        
+        if (note.type === 'text') {
+            text.textContent = `${note.wordCount || 0} 字`;
+        } else if (note.type === 'audio') {
+            text.textContent = `${note.duration ? note.duration.toFixed(2) : 0} 秒`;
+        }
+        
+        listItem.appendChild(indicator);
+        listItem.appendChild(text);
         
         // 添加点击事件，定位到备注
         listItem.addEventListener('click', () => {
@@ -509,13 +538,24 @@ function showNotePopup(note, markerElement) {
         }
     });
     
-    // 点击外部关闭（非钉住状态）
-    pdfContainer.addEventListener('click', function closeListener(e) {
-        if (!popup.contains(e.target) && !popup.classList.contains('pinned')) {
-            popup.remove();
-            pdfContainer.removeEventListener('click', closeListener);
-        }
-    });
+    // 对于新创建的备注（没有内容的备注），默认钉住并设置为可编辑状态
+    if (!note.content) {
+        // 默认钉住新备注框
+        popup.classList.add('pinned');
+        popup.querySelector('.pin-btn').textContent = '📍';
+        
+        // 新备注默认可编辑
+        textarea.readOnly = false;
+        textarea.focus();
+    } else {
+        // 点击外部关闭（非钉住状态）
+        pdfContainer.addEventListener('click', function closeListener(e) {
+            if (!popup.contains(e.target) && !popup.classList.contains('pinned')) {
+                popup.remove();
+                pdfContainer.removeEventListener('click', closeListener);
+            }
+        });
+    }
     
     pdfContainer.appendChild(popup);
 }
@@ -526,6 +566,7 @@ function makePopupDraggable(popupElement) {
     let offsetX, offsetY;
 
     header.addEventListener('mousedown', (e) => {
+        e.stopPropagation(); // 阻止事件冒泡到容器的 mousedown 处理器
         isDragging = true;
         offsetX = e.clientX - popupElement.getBoundingClientRect().left;
         offsetY = e.clientY - popupElement.getBoundingClientRect().top;

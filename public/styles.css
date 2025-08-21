@@ -59,11 +59,88 @@ body {
     padding: 10px;
     background-color: #f0f0f0;
     border-bottom: 1px solid #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 #toolbar button {
     margin-right: 10px;
     padding: 5px 10px;
+}
+
+#toolbar .toolbar-left {
+    display: flex;
+    align-items: center;
+}
+
+#toolbar .toolbar-right {
+    display: flex;
+    align-items: center;
+}
+
+#page-info {
+    margin: 0 10px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+/* 滑块开关样式 */
+.switch-container {
+    display: flex;
+    align-items: center;
+    margin-left: 10px;
+}
+
+.switch-label {
+    font-size: 14px;
+    margin: 0 5px;
+    color: #333;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
 }
 
 #main-content {
@@ -89,6 +166,15 @@ body {
     margin-bottom: 5px;
     border-radius: 3px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    border: 1px solid #ddd;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s ease;
+}
+
+.note-item:hover {
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
 }
 
 .note-item.text {
@@ -97,6 +183,29 @@ body {
 
 .note-item.audio {
     /* 录音备注项样式 */
+}
+
+.note-item .note-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.note-item.audio .note-indicator {
+    background-color: #2196F3; /* 录音备注使用蓝色 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    color: white;
+    border: 2px solid white;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.note-item.audio .note-indicator::before {
+    content: "▶";
 }
 
 #pdf-container {

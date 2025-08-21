@@ -19,15 +19,28 @@
         <!-- PDF 阅读器页面 -->
         <div id="reader-page" style="display: none;">
             <div id="toolbar">
-                <button id="back-to-home">返回主页</button>
-                <button id="prev-page">上一页</button>
-                <button id="next-page">下一页</button>
-                <button id="zoom-in">放大</button>
-                <button id="zoom-out">缩小</button>
-                <button id="fit-width">适应宽度</button>
-                <button id="fit-height">适应高度</button>
-                <button id="toggle-view-mode">切换视图 (单页/双页)</button>
-                <button id="toggle-record-mode">🎤 录音模式</button>
+                <div class="toolbar-left">
+                    <button id="back-to-home">返回主页</button>
+                </div>
+                <div class="toolbar-right">
+                    <button id="prev-page">上一页</button>
+                    <span id="page-info">第 <span id="current-page">1</span> 页 / 共 <span id="total-pages">1</span> 页</span>
+                    <button id="next-page">下一页</button>
+                    <button id="zoom-in">放大</button>
+                    <button id="zoom-out">缩小</button>
+                    <button id="fit-width">适应宽度</button>
+                    <button id="fit-height">适应高度</button>
+                    <button id="toggle-view-mode">切换视图 (单页/双页)</button>
+                    <!-- 滑块开关 -->
+                    <div class="switch-container">
+                        <span class="switch-label">文字</span>
+                        <label class="switch">
+                            <input type="checkbox" id="mode-toggle">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">录音</span>
+                    </div>
+                </div>
             </div>
             <div id="main-content">
                 <div id="notes-list-panel">
