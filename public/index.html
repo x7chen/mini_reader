@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini PDF Reader</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 主页/文件列表页面 -->
+        <div id="home-page">
+            <h1>PDF 文件列表</h1>
+            <input type="file" id="file-input" accept=".pdf" />
+            <button id="upload-btn">上传 PDF</button>
+            <div id="file-list"></div>
+        </div>
+
+        <!-- PDF 阅读器页面 -->
+        <div id="reader-page" style="display: none;">
+            <div id="toolbar">
+                <button id="back-to-home">返回主页</button>
+                <button id="prev-page">上一页</button>
+                <button id="next-page">下一页</button>
+                <button id="zoom-in">放大</button>
+                <button id="zoom-out">缩小</button>
+                <button id="fit-width">适应宽度</button>
+                <button id="fit-height">适应高度</button>
+                <button id="toggle-view-mode">切换视图 (单页/双页)</button>
+                <button id="toggle-record-mode">🎤 录音模式</button>
+            </div>
+            <div id="main-content">
+                <div id="notes-list-panel">
+                    <h3>备注列表</h3>
+                    <ul id="notes-list"></ul>
+                </div>
+                <div id="pdf-container">
+                    <canvas id="pdf-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 悬浮备注框模板 -->
+    <div id="note-popup-template" class="note-popup" style="display: none;">
+        <div class="popup-header">
+            <span class="drag-handle">::</span>
+            <div class="popup-actions">
+                <button class="edit-btn">✏️</button>
+                <button class="delete-btn">🗑️</button>
+                <button class="pin-btn">📌</button>
+                <button class="close-btn">×</button>
+            </div>
+        </div>
+        <textarea class="note-content" readonly></textarea>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>
+        // 设置 pdf.js workerSrc
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+    </script>
+    <script src="script.js"></script>
+</body>
+</html>

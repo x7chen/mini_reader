@@ -1,0 +1,203 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+#home-page {
+    padding: 20px;
+}
+
+#file-list {
+    margin-top: 20px;
+}
+
+.pdf-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+.pdf-thumbnail {
+    width: 100px;
+    height: 140px;
+    object-fit: cover;
+    margin-right: 15px;
+    border: 1px solid #999;
+}
+
+.pdf-link {
+    cursor: pointer;
+    color: blue;
+    text-decoration: underline;
+    flex-grow: 1;
+}
+
+.delete-btn {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.delete-btn:hover {
+    background-color: #d32f2f;
+}
+
+#reader-page {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#toolbar {
+    padding: 10px;
+    background-color: #f0f0f0;
+    border-bottom: 1px solid #ccc;
+}
+
+#toolbar button {
+    margin-right: 10px;
+    padding: 5px 10px;
+}
+
+#main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+#notes-list-panel {
+    width: 250px;
+    padding: 10px;
+    border-right: 1px solid #ccc;
+    overflow-y: auto;
+}
+
+#notes-list {
+    list-style: none;
+    padding: 0;
+}
+
+.note-item {
+    padding: 5px;
+    margin-bottom: 5px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.note-item.text {
+    /* 文字备注项样式 */
+}
+
+.note-item.audio {
+    /* 录音备注项样式 */
+}
+
+#pdf-container {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+    background-color: #e0e0e0; /* 背景色用于显示页面间隙 */
+}
+
+#pdf-canvas {
+    margin: auto;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+    display: block;
+}
+
+
+/* --- 备注标记和悬浮框样式 --- */
+
+.note-marker {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 10;
+    transform: translate(-50%, -50%); /* 使中心点对齐 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: white;
+    user-select: none; /* 防止标记文本被选中 */
+}
+
+.note-marker.text {
+    /* 文字备注标记通用样式已在 .note-marker 中定义 */
+}
+
+.note-marker.audio {
+    background-color: #2196F3; /* 录音标记使用蓝色 */
+}
+
+.note-marker.audio::before {
+    content: "▶️";
+}
+
+.note-marker.playing {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+
+.note-popup {
+    position: absolute;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    min-width: 200px;
+    max-width: 300px;
+}
+
+.popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+    border-bottom: 1px solid #eee;
+    cursor: move; /* 拖动区域光标 */
+}
+
+.drag-handle {
+    cursor: move;
+    padding: 0 5px;
+    user-select: none;
+}
+
+.popup-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.popup-actions button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px;
+}
+
+.note-content {
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    padding: 10px;
+    resize: vertical;
+    min-height: 50px;
+}
