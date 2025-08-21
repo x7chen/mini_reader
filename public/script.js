@@ -416,6 +416,7 @@ function updateNotesList() {
     currentPageNotes.forEach(note => {
         const listItem = document.createElement('li');
         listItem.className = `note-item ${note.type}`;
+        listItem.dataset.noteId = note.id; // 添加数据属性以便识别
         
         // 创建图标指示器
         const indicator = document.createElement('div');
@@ -427,6 +428,7 @@ function updateNotesList() {
         // 录音备注的图标已在CSS中定义
         
         const text = document.createElement('span');
+        text.className = 'note-text';
         
         if (note.type === 'text') {
             text.textContent = `${note.wordCount || 0} 字`;
@@ -434,11 +436,53 @@ function updateNotesList() {
             text.textContent = `${note.duration ? note.duration.toFixed(2) : 0} 秒`;
         }
         
+        // 创建更多按钮
+        const moreButton = document.createElement('button');
+        moreButton.className = 'more-button';
+        moreButton.innerHTML = '&#8942;'; // 三个垂直点
+        moreButton.title = '更多选项';
+        
+        // 创建抽屉菜单
+        const drawerMenu = document.createElement('div');
+        drawerMenu.className = 'drawer-menu';
+        
+        const deleteItem = document.createElement('div');
+        deleteItem.className = 'menu-item delete';
+        deleteItem.textContent = '删除';
+        deleteItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteNote(note.id);
+            drawerMenu.classList.remove('show');
+        });
+        
+        drawerMenu.appendChild(deleteItem);
+        
+        // 点击更多按钮显示/隐藏抽屉菜单
+        moreButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 隐藏其他所有抽屉菜单
+            document.querySelectorAll('.drawer-menu').forEach(menu => {
+                if (menu !== drawerMenu) {
+                    menu.classList.remove('show');
+                }
+            });
+            
+            // 切换当前抽屉菜单
+            drawerMenu.classList.toggle('show');
+        });
+        
         listItem.appendChild(indicator);
         listItem.appendChild(text);
+        listItem.appendChild(moreButton);
+        listItem.appendChild(drawerMenu);
         
         // 添加点击事件，定位到备注
-        listItem.addEventListener('click', () => {
+        listItem.addEventListener('click', (e) => {
+            // 如果点击的是更多按钮或抽屉菜单，不执行定位操作
+            if (e.target === moreButton || drawerMenu.contains(e.target)) {
+                return;
+            }
+            
             // TODO: 实现定位到备注标记的逻辑
             // 例如，高亮标记或滚动到标记位置
             const marker = pdfContainer.querySelector(`.note-marker[data-id="${note.id}"]`);
@@ -459,6 +503,15 @@ function updateNotesList() {
         });
         
         notesList.appendChild(listItem);
+    });
+    
+    // 点击页面其他地方隐藏所有抽屉菜单
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.more-button') && !e.target.closest('.drawer-menu')) {
+            document.querySelectorAll('.drawer-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+        }
     });
 }
 
