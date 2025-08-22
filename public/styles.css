@@ -36,19 +36,6 @@ body {
     flex-grow: 1;
 }
 
-.delete-btn {
-    background-color: #f44336;
-    color: white;
-    border: none;
-    padding: 5px 10px;
-    cursor: pointer;
-    border-radius: 3px;
-}
-
-.delete-btn:hover {
-    background-color: #d32f2f;
-}
-
 #reader-page {
     height: 100vh;
     display: flex;
@@ -154,6 +141,7 @@ input:checked + .slider:before {
     padding: 10px;
     border-right: 1px solid #ccc;
     overflow-y: auto;
+    background-color: #9dcaf1; /* 浅蓝色背景 */
 }
 
 #notes-list {
@@ -272,8 +260,25 @@ input:checked + .slider:before {
     background-color: #e0e0e0; /* 背景色用于显示页面间隙 */
 }
 
+#pdf-container.dual-page {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
 #pdf-canvas {
     margin: auto;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+    display: block;
+}
+
+#pdf-container.dual-page #pdf-canvas {
+    margin: 20px;
+}
+
+/* 双页模式下的第二个画布 */
+#pdf-canvas-second {
+    margin: 20px;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
     display: block;
 }
@@ -322,41 +327,27 @@ input:checked + .slider:before {
 
 .note-popup {
     position: absolute;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    z-index: 100;
+    background-color: #F8F8A0; /* 修改背景颜色 */
+    border: 3px solid; /* 边框颜色将通过 JS 动态设置 */
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 500;
     min-width: 200px;
     max-width: 300px;
+    
+    /* 关键：高度由内容决定 */
+    display: inline-block; /* 保持宽度约束，高度自适应内容 */
+    vertical-align: top;
 }
 
 .popup-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 5px;
-    border-bottom: 1px solid #eee;
+    padding: 4px 8px; /* 降低高度 */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     cursor: move; /* 拖动区域光标 */
-}
-
-.drag-handle {
-    cursor: move;
-    padding: 0 5px;
-    user-select: none;
-}
-
-.popup-actions {
-    display: flex;
-    gap: 5px;
-}
-
-.popup-actions button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 16px;
-    padding: 2px;
+    flex-shrink: 0; /* 防止标题栏被压缩 */
 }
 
 .note-content {
@@ -364,6 +355,16 @@ input:checked + .slider:before {
     box-sizing: border-box;
     border: none;
     padding: 10px;
-    resize: vertical;
-    min-height: 50px;
+    resize: none; /* 禁止手动调整大小 */
+    min-height: 60px; /* 初始最小高度 */
+    max-height: 500px; /* 防止无限增高 */
+    background-color: rgba(255, 255, 255, 0.95); /* 白色背景，略微透明 */
+    border-radius: 0 0 6px 6px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-y: auto; /* 当内容超出时，自动出现滚动条 */
+    
+    /* 自动扩展高度 */
+    height: auto;
 }

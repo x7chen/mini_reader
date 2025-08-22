@@ -1,11 +1,11 @@
-// --- 全局变量 ---
+// 全局变量
 let currentPdfDoc = null;
 let currentPageNumber = 1;
 let numPages = 0;
 let scale = 1.0;
 let isRendering = false;
 let isDualPageMode = false; // 默认单页模式
-let isRecordMode = false;   // 默认非录音模式
+let isRecordMode = true;   // 默认录音模式
 let notesData = [];         // 存储当前PDF的备注数据
 let currentPdfFilename = ''; // 当前打开的PDF文件名
 let longPressTimer = null;  // 长按定时器
@@ -14,6 +14,7 @@ let mediaRecorder = null;   // MediaRecorder 实例
 let recordedChunks = [];    // 存储录音数据块
 let currentAudio = null;    // 当前播放的音频元素
 let currentPlayingMarker = null; // 当前正在播放的录音标记
+let isDraggingPopup = false; // 是否正在拖动悬浮框
 
 // DOM 元素
 const homePage = document.getElementById('home-page');
@@ -256,43 +257,123 @@ function renderPage(pageNumber) {
     const ctx = canvas.getContext('2d');
     
     // 更新页码显示
-    document.getElementById('current-page').textContent = pageNumber;
+    if (isDualPageMode && pageNumber < numPages) {
+        document.getElementById('current-page').textContent = `${pageNumber}-${pageNumber + 1}`;
+    } else {
+        document.getElementById('current-page').textContent = pageNumber;
+    }
+    document.getElementById('total-pages').textContent = numPages;
     
     // 清除画布和旧的备注标记
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     clearNoteMarkers();
+    
+    // 移除可能存在的第二个画布
+    const secondCanvas = document.getElementById('pdf-canvas-second');
+    if (secondCanvas) {
+        secondCanvas.remove();
+    }
 
-    // TODO: 实现双页模式渲染
-    // 目前只实现单页模式
+    // 检查页码有效性
     if (pageNumber < 1 || pageNumber > numPages) {
         isRendering = false;
         return;
     }
 
-    currentPdfDoc.getPage(pageNumber).then(page => {
-        const viewport = page.getViewport({ scale: scale });
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+    // 单页模式
+    if (!isDualPageMode) {
+        currentPdfDoc.getPage(pageNumber).then(page => {
+            const viewport = page.getViewport({ scale: scale });
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
 
-        const renderContext = {
-            canvasContext: ctx,
-            viewport: viewport
-        };
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport
+            };
+            
+            return page.render(renderContext).promise.then(() => {
+                isRendering = false;
+                // 渲染完成后，添加备注标记
+                renderNoteMarkers();
+            });
+        }).catch(error => {
+            console.error('Error rendering page:', error);
+            isRendering = false;
+        });
+    } 
+    // 双页模式
+    else {
+        // 创建第二个画布用于显示第二页
+        const secondCanvas = document.createElement('canvas');
+        secondCanvas.id = 'pdf-canvas-second';
+        pdfContainer.appendChild(secondCanvas);
+        const secondCtx = secondCanvas.getContext('2d');
         
-        return page.render(renderContext).promise.then(() => {
+        // 渲染第一页
+        const renderFirstPage = currentPdfDoc.getPage(pageNumber).then(page => {
+            const viewport = page.getViewport({ scale: scale });
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport
+            };
+            
+            return page.render(renderContext).promise;
+        });
+        
+        // 渲染第二页（如果存在）
+        let renderSecondPage = Promise.resolve();
+        if (pageNumber + 1 <= numPages) {
+            renderSecondPage = currentPdfDoc.getPage(pageNumber + 1).then(page => {
+                const viewport = page.getViewport({ scale: scale });
+                secondCanvas.height = viewport.height;
+                secondCanvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: secondCtx,
+                    viewport: viewport
+                };
+                
+                return page.render(renderContext).promise;
+            });
+        } else {
+            // 如果没有第二页，隐藏第二个画布
+            secondCanvas.style.display = 'none';
+        }
+        
+        // 等待两个页面都渲染完成
+        Promise.all([renderFirstPage, renderSecondPage]).then(() => {
             isRendering = false;
             // 渲染完成后，添加备注标记
             renderNoteMarkers();
+        }).catch(error => {
+            console.error('Error rendering pages:', error);
+            isRendering = false;
         });
-    }).catch(error => {
-        console.error('Error rendering page:', error);
-        isRendering = false;
-    });
+    }
 }
 
 function changePage(delta) {
-    const newPageNumber = currentPageNumber + delta;
-    if (newPageNumber >= 1 && newPageNumber <= numPages) {
+    let newPageNumber;
+    
+    if (isDualPageMode) {
+        if (delta > 0) {
+            // 下一页 - 跳两页
+            newPageNumber = Math.min(currentPageNumber + 2, numPages);
+        } else {
+            // 上一页 - 跳两页
+            newPageNumber = Math.max(currentPageNumber - 2, 1);
+        }
+    } else {
+        // 单页模式 - 跳一页
+        newPageNumber = currentPageNumber + delta;
+        newPageNumber = Math.max(1, Math.min(newPageNumber, numPages));
+    }
+    
+    if (newPageNumber !== currentPageNumber) {
         currentPageNumber = newPageNumber;
         renderPage(currentPageNumber);
     }
@@ -329,9 +410,16 @@ function fitPdfToHeight() {
 
 function toggleViewMode() {
     isDualPageMode = !isDualPageMode;
-    // TODO: 实现双页模式切换逻辑
-    alert('双页模式切换功能待实现');
-    // renderPage(currentPageNumber);
+    toggleViewModeBtn.textContent = isDualPageMode ? '单页模式' : '双页模式';
+    
+    // 添加双页模式的CSS类
+    if (isDualPageMode) {
+        pdfContainer.classList.add('dual-page');
+    } else {
+        pdfContainer.classList.remove('dual-page');
+    }
+    
+    renderPage(currentPageNumber);
 }
 
 function toggleMode() {
@@ -368,8 +456,15 @@ function renderNoteMarkers() {
     const markers = pdfContainer.querySelectorAll('.note-marker');
     markers.forEach(marker => marker.remove());
 
-    // 筛选出当前页面的备注
-    const currentPageNotes = notesData.filter(note => note.page === currentPageNumber);
+    // 策划选出当前页面的备注（在双页模式下包括两个页面）
+    let currentPageNotes;
+    if (isDualPageMode && currentPageNumber < numPages) {
+        currentPageNotes = notesData.filter(note => 
+            note.page === currentPageNumber || note.page === currentPageNumber + 1
+        );
+    } else {
+        currentPageNotes = notesData.filter(note => note.page === currentPageNumber);
+    }
     
     currentPageNotes.forEach(note => {
         const marker = document.createElement('div');
@@ -382,12 +477,40 @@ function renderNoteMarkers() {
         }
         // 录音标记的样式已在CSS中定义
         
-        // 获取当前容器的渲染尺寸
-        const containerRect = pdfContainer.getBoundingClientRect();
+        let x, y;
         
-        // 使用相对坐标计算绝对位置
-        const x = note.relativeX * containerRect.width + pdfContainer.scrollLeft;
-        const y = note.relativeY * containerRect.height + pdfContainer.scrollTop;
+        // 在双页模式下，需要根据备注属于哪一页来计算位置
+        if (isDualPageMode && currentPageNumber < numPages) {
+            // 获取两个画布元素
+            const firstCanvas = pdfCanvas;
+            const secondCanvas = document.getElementById('pdf-canvas-second');
+            
+            if (note.page === currentPageNumber) {
+                // 备注在第一页
+                const canvasRect = firstCanvas.getBoundingClientRect();
+                const containerRect = pdfContainer.getBoundingClientRect();
+                
+                // 使用第一页画布的尺寸计算位置
+                x = note.relativeX * canvasRect.width + canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+                y = note.relativeY * canvasRect.height + canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            } else if (note.page === currentPageNumber + 1 && secondCanvas) {
+                // 备注在第二页
+                const canvasRect = secondCanvas.getBoundingClientRect();
+                const containerRect = pdfContainer.getBoundingClientRect();
+                
+                // 使用第二页画布的尺寸计算位置
+                x = note.relativeX * canvasRect.width + canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+                y = note.relativeY * canvasRect.height + canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            }
+        } else {
+            // 单页模式或只有一页的情况
+            const canvasRect = pdfCanvas.getBoundingClientRect();
+            const containerRect = pdfContainer.getBoundingClientRect();
+            
+            // 使用画布的尺寸计算位置
+            x = note.relativeX * canvasRect.width + canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+            y = note.relativeY * canvasRect.height + canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        }
         
         marker.style.left = `${x}px`;
         marker.style.top = `${y}px`;
@@ -410,8 +533,15 @@ function renderNoteMarkers() {
 
 function updateNotesList() {
     notesList.innerHTML = '';
-    // 筛选出当前页面的备注 (简化，实际应考虑双页模式)
-    const currentPageNotes = notesData.filter(note => note.page === currentPageNumber);
+    // 筛选出当前页面的备注（在双页模式下包括两个页面）
+    let currentPageNotes;
+    if (isDualPageMode && currentPageNumber < numPages) {
+        currentPageNotes = notesData.filter(note => 
+            note.page === currentPageNumber || note.page === currentPageNumber + 1
+        );
+    } else {
+        currentPageNotes = notesData.filter(note => note.page === currentPageNumber);
+    }
     
     currentPageNotes.forEach(note => {
         const listItem = document.createElement('li');
@@ -429,6 +559,14 @@ function updateNotesList() {
         
         const text = document.createElement('span');
         text.className = 'note-text';
+        
+        // 添加页面信息
+        const pageInfo = document.createElement('span');
+        pageInfo.className = 'page-info';
+        pageInfo.textContent = ` (第${note.page}页)`;
+        pageInfo.style.fontSize = '12px';
+        pageInfo.style.color = '#666';
+        pageInfo.style.marginLeft = '5px';
         
         if (note.type === 'text') {
             text.textContent = `${note.wordCount || 0} 字`;
@@ -473,6 +611,7 @@ function updateNotesList() {
         
         listItem.appendChild(indicator);
         listItem.appendChild(text);
+        listItem.appendChild(pageInfo);
         listItem.appendChild(moreButton);
         listItem.appendChild(drawerMenu);
         
@@ -530,7 +669,12 @@ function showNotePopup(note, markerElement) {
     
     const textarea = popup.querySelector('.note-content');
     textarea.value = note.content || '';
-    textarea.style.backgroundColor = note.color; // 背景色与标记一致
+    
+    // 设置背景色和边框色与标记一致
+    if (note.type === 'text') {
+        popup.style.backgroundColor = '#E0F010'; // 统一背景色
+        popup.style.borderColor = note.color; // 边框色与标记一致
+    }
     
     // 设置初始位置在标记附近
     const markerRect = markerElement.getBoundingClientRect();
@@ -580,7 +724,7 @@ function showNotePopup(note, markerElement) {
         popup.remove();
     });
     
-    // 文本域内容变化时更新数据
+    // 文本域内容变化时更新数据并调整高度
     textarea.addEventListener('input', () => {
         const updatedNote = notesData.find(n => n.id === note.id);
         if (updatedNote) {
@@ -589,7 +733,16 @@ function showNotePopup(note, markerElement) {
             saveNotesData(); // 保存到服务器
             updateNotesList(); // 更新列表
         }
+        
+        // 自动调整文本域高度
+        adjustTextareaHeight(textarea);
     });
+    
+    // 初始化文本域高度
+    // 使用setTimeout确保DOM已完全渲染后再调整高度
+    setTimeout(() => {
+        adjustTextareaHeight(textarea);
+    }, 0);
     
     // 对于新创建的备注（没有内容的备注），默认钉住并设置为可编辑状态
     if (!note.content) {
@@ -621,6 +774,7 @@ function makePopupDraggable(popupElement) {
     header.addEventListener('mousedown', (e) => {
         e.stopPropagation(); // 阻止事件冒泡到容器的 mousedown 处理器
         isDragging = true;
+        isDraggingPopup = true; // 设置拖动标志
         offsetX = e.clientX - popupElement.getBoundingClientRect().left;
         offsetY = e.clientY - popupElement.getBoundingClientRect().top;
         // 将拖动的元素置于顶层
@@ -642,9 +796,12 @@ function makePopupDraggable(popupElement) {
     });
 
     document.addEventListener('mouseup', () => {
-        isDragging = false;
-        // 恢复原来的 z-index
-        popupElement.style.zIndex = 100;
+        if (isDragging) {
+            isDragging = false;
+            isDraggingPopup = false; // 清除拖动标志
+            // 恢复原来的 z-index
+            popupElement.style.zIndex = 100;
+        }
     });
 }
 
@@ -660,20 +817,61 @@ function deleteNote(noteId) {
 function handleCanvasMouseDown(e) {
     if (e.button !== 0) return; // 只处理左键
     
+    // 如果正在拖动悬浮框，则不处理
+    if (isDraggingPopup) {
+        return;
+    }
+    
     // 计算相对于PDF容器的坐标
     const containerRect = pdfContainer.getBoundingClientRect();
     const x = e.clientX - containerRect.left + pdfContainer.scrollLeft;
     const y = e.clientY - containerRect.top + pdfContainer.scrollTop;
     
-    // 检查点击位置是否在canvas范围内
-    const canvasRect = pdfCanvas.getBoundingClientRect();
-    const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-    const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
-    const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
-    const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
+    let isInCanvas = false;
     
-    // 如果点击位置不在canvas范围内，则不处理
-    if (x < canvasLeft || x > canvasRight || y < canvasTop || y > canvasBottom) {
+    if (isDualPageMode && currentPageNumber < numPages) {
+        // 双页模式下，检查是否在任一canvas范围内
+        const firstCanvas = pdfCanvas;
+        const secondCanvas = document.getElementById('pdf-canvas-second');
+        
+        // 检查第一个canvas
+        const firstCanvasRect = firstCanvas.getBoundingClientRect();
+        const firstCanvasLeft = firstCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const firstCanvasTop = firstCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const firstCanvasRight = firstCanvasLeft + firstCanvas.offsetWidth;
+        const firstCanvasBottom = firstCanvasTop + firstCanvas.offsetHeight;
+        
+        if (x >= firstCanvasLeft && x <= firstCanvasRight && y >= firstCanvasTop && y <= firstCanvasBottom) {
+            isInCanvas = true;
+        }
+        
+        // 如果第二页存在，检查第二个canvas
+        if (secondCanvas) {
+            const secondCanvasRect = secondCanvas.getBoundingClientRect();
+            const secondCanvasLeft = secondCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+            const secondCanvasTop = secondCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            const secondCanvasRight = secondCanvasLeft + secondCanvas.offsetWidth;
+            const secondCanvasBottom = secondCanvasTop + secondCanvas.offsetHeight;
+            
+            if (x >= secondCanvasLeft && x <= secondCanvasRight && y >= secondCanvasTop && y <= secondCanvasBottom) {
+                isInCanvas = true;
+            }
+        }
+    } else {
+        // 单页模式下，检查是否在canvas范围内
+        const canvasRect = pdfCanvas.getBoundingClientRect();
+        const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
+        const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
+        
+        if (x >= canvasLeft && x <= canvasRight && y >= canvasTop && y <= canvasBottom) {
+            isInCanvas = true;
+        }
+    }
+    
+    // 如果点击位置不在任一canvas范围内，则不处理
+    if (!isInCanvas) {
         return;
     }
     
@@ -682,6 +880,22 @@ function handleCanvasMouseDown(e) {
     if (clickedElement.classList.contains('note-marker')) {
         // 点击标记已在标记的点击事件中处理
         return;
+    }
+    
+    // 检查是否点击在已存在的悬浮框上
+    const popups = document.querySelectorAll('.note-popup');
+    for (let i = 0; i < popups.length; i++) {
+        const popup = popups[i];
+        const popupRect = popup.getBoundingClientRect();
+        const popupLeft = popupRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const popupTop = popupRect.top - containerRect.top + pdfContainer.scrollTop;
+        const popupRight = popupLeft + popupRect.width;
+        const popupBottom = popupTop + popupRect.height;
+        
+        // 如果点击位置在悬浮框内，则不处理
+        if (x >= popupLeft && x <= popupRight && y >= popupTop && y <= popupBottom) {
+            return;
+        }
     }
     
     // 开始长按定时器
@@ -738,27 +952,78 @@ function handleCanvasMouseLeave() {
 function addTextNote(x, y) {
     // 检查坐标是否在canvas范围内
     const containerRect = pdfContainer.getBoundingClientRect();
-    const canvasRect = pdfCanvas.getBoundingClientRect();
-    const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-    const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
-    const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
-    const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
     
-    // 如果坐标不在canvas范围内，则不添加备注
-    if (x < canvasLeft || x > canvasRight || y < canvasTop || y > canvasBottom) {
-        return;
+    let targetPage = currentPageNumber;
+    let relativeX, relativeY;
+    
+    if (isDualPageMode && currentPageNumber < numPages) {
+        // 双页模式下，需要判断点击的是第一页还是第二页
+        const firstCanvas = pdfCanvas;
+        const secondCanvas = document.getElementById('pdf-canvas-second');
+        
+        const firstCanvasRect = firstCanvas.getBoundingClientRect();
+        const firstCanvasLeft = firstCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const firstCanvasTop = firstCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const firstCanvasRight = firstCanvasLeft + firstCanvas.offsetWidth;
+        const firstCanvasBottom = firstCanvasTop + firstCanvas.offsetHeight;
+        
+        // 检查是否点击在第一页上
+        if (x >= firstCanvasLeft && x <= firstCanvasRight && y >= firstCanvasTop && y <= firstCanvasBottom) {
+            targetPage = currentPageNumber;
+            // 计算相对于第一页canvas的相对坐标
+            relativeX = (x - firstCanvasLeft) / firstCanvas.offsetWidth;
+            relativeY = (y - firstCanvasTop) / firstCanvas.offsetHeight;
+        } 
+        // 如果第二页存在，检查是否点击在第二页上
+        else if (secondCanvas) {
+            const secondCanvasRect = secondCanvas.getBoundingClientRect();
+            const secondCanvasLeft = secondCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+            const secondCanvasTop = secondCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            const secondCanvasRight = secondCanvasLeft + secondCanvas.offsetWidth;
+            const secondCanvasBottom = secondCanvasTop + secondCanvas.offsetHeight;
+            
+            // 检查点击位置是否在第二页canvas范围内
+            if (x >= secondCanvasLeft && x <= secondCanvasRight && y >= secondCanvasTop && y <= secondCanvasBottom) {
+                targetPage = currentPageNumber + 1;
+                // 计算相对于第二页canvas的相对坐标
+                relativeX = (x - secondCanvasLeft) / secondCanvas.offsetWidth;
+                relativeY = (y - secondCanvasTop) / secondCanvas.offsetHeight;
+            } 
+            // 如果都不在范围内，则不添加备注
+            else {
+                return;
+            }
+        } 
+        // 如果第二页不存在且点击位置不在第一页范围内，则不添加备注
+        else {
+            return;
+        }
+    } 
+    // 单页模式
+    else {
+        const canvasRect = pdfCanvas.getBoundingClientRect();
+        const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
+        const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
+        
+        // 如果坐标不在canvas范围内，则不添加备注
+        if (x < canvasLeft || x > canvasRight || y < canvasTop || y > canvasBottom) {
+            return;
+        }
+        
+        targetPage = currentPageNumber;
+        // 计算相对于canvas的相对坐标
+        relativeX = (x - canvasLeft) / pdfCanvas.offsetWidth;
+        relativeY = (y - canvasTop) / pdfCanvas.offsetHeight;
     }
     
     const id = `note-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const color = getRandomNoteColor();
     
-    // 计算相对坐标 (0-1之间)，相对于PDF容器
-    const relativeX = x / containerRect.width;
-    const relativeY = y / containerRect.height;
-    
     const newNote = {
         id: id,
-        page: currentPageNumber,
+        page: targetPage, // 使用计算出的目标页面
         relativeX: relativeX,
         relativeY: relativeY,
         color: color,
@@ -788,7 +1053,9 @@ function addTextNote(x, y) {
 }
 
 function getRandomNoteColor() {
-    const colors = ['#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3'];
+    const colors = ['#1ABC9C','#2ECC71','#3498DB','#9B59B6','#34495E','#F1C40F',
+    '#E67E22','#E74C3C','#95A5A6','#16A085','#27AE60','#2980B9','#8E44AD','#2C3E50',
+    '#F39C12','#D35400','#C0392B','#7F8C8D'];
     return colors[Math.floor(Math.random() * colors.length)];
 }
 
@@ -797,20 +1064,77 @@ function getRandomNoteColor() {
 async function startRecording(x, y) {
     console.log('Starting recording at coordinates:', x, y);
     
-    // 检查坐标是否在canvas范围内
+    // 检查坐标是否在canvas范围内并确定目标页面
     const containerRect = pdfContainer.getBoundingClientRect();
-    const canvasRect = pdfCanvas.getBoundingClientRect();
-    const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-    const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
-    const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
-    const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
     
-    console.log('Canvas boundaries:', canvasLeft, canvasTop, canvasRight, canvasBottom);
+    let targetPage = currentPageNumber;
+    let relativeX, relativeY;
     
-    // 如果坐标不在canvas范围内，则不添加录音备注
-    if (x < canvasLeft || x > canvasRight || y < canvasTop || y > canvasBottom) {
-        console.log('Recording position is outside canvas boundaries, ignoring.');
-        return;
+    if (isDualPageMode && currentPageNumber < numPages) {
+        // 双页模式下，需要判断点击的是第一页还是第二页
+        const firstCanvas = pdfCanvas;
+        const secondCanvas = document.getElementById('pdf-canvas-second');
+        
+        const firstCanvasRect = firstCanvas.getBoundingClientRect();
+        const firstCanvasLeft = firstCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const firstCanvasTop = firstCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const firstCanvasRight = firstCanvasLeft + firstCanvas.offsetWidth;
+        const firstCanvasBottom = firstCanvasTop + firstCanvas.offsetHeight;
+        
+        // 检查是否点击在第一页上
+        if (x >= firstCanvasLeft && x <= firstCanvasRight && y >= firstCanvasTop && y <= firstCanvasBottom) {
+            targetPage = currentPageNumber;
+            // 计算相对于第一页canvas的相对坐标
+            relativeX = (x - firstCanvasLeft) / firstCanvas.offsetWidth;
+            relativeY = (y - firstCanvasTop) / firstCanvas.offsetHeight;
+        } 
+        // 如果第二页存在，检查是否点击在第二页上
+        else if (secondCanvas) {
+            const secondCanvasRect = secondCanvas.getBoundingClientRect();
+            const secondCanvasLeft = secondCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+            const secondCanvasTop = secondCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            const secondCanvasRight = secondCanvasLeft + secondCanvas.offsetWidth;
+            const secondCanvasBottom = secondCanvasTop + secondCanvas.offsetHeight;
+            
+            // 检查点击位置是否在第二页canvas范围内
+            if (x >= secondCanvasLeft && x <= secondCanvasRight && y >= secondCanvasTop && y <= secondCanvasBottom) {
+                targetPage = currentPageNumber + 1;
+                // 计算相对于第二页canvas的相对坐标
+                relativeX = (x - secondCanvasLeft) / secondCanvas.offsetWidth;
+                relativeY = (y - secondCanvasTop) / secondCanvas.offsetHeight;
+            } 
+            // 如果都不在范围内，则不添加录音备注
+            else {
+                console.log('Recording position is outside canvas boundaries, ignoring.');
+                return;
+            }
+        } 
+        // 如果第二页不存在且点击位置不在第一页范围内，则不添加录音备注
+        else {
+            console.log('Recording position is outside canvas boundaries, ignoring.');
+            return;
+        }
+    } 
+    // 单页模式
+    else {
+        const canvasRect = pdfCanvas.getBoundingClientRect();
+        const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
+        const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
+        const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
+        
+        console.log('Canvas boundaries:', canvasLeft, canvasTop, canvasRight, canvasBottom);
+        
+        // 如果坐标不在canvas范围内，则不添加录音备注
+        if (x < canvasLeft || x > canvasRight || y < canvasTop || y > canvasBottom) {
+            console.log('Recording position is outside canvas boundaries, ignoring.');
+            return;
+        }
+        
+        targetPage = currentPageNumber;
+        // 计算相对于canvas的相对坐标
+        relativeX = (x - canvasLeft) / pdfCanvas.offsetWidth;
+        relativeY = (y - canvasTop) / pdfCanvas.offsetHeight;
     }
     
     try {
@@ -845,10 +1169,6 @@ async function startRecording(x, y) {
                     // 创建录音备注数据
                     const id = `record-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                     
-                    // 计算相对坐标 (0-1之间)，相对于PDF容器
-                    const relativeX = x / containerRect.width;
-                    const relativeY = y / containerRect.height;
-                    
                     console.log('Creating record note with relative coordinates:', relativeX, relativeY);
                     
                     // 简化处理，实际应用中应获取准确时长
@@ -856,7 +1176,7 @@ async function startRecording(x, y) {
                     
                     const newRecordNote = {
                         id: id,
-                        page: currentPageNumber,
+                        page: targetPage, // 使用计算出的目标页面
                         relativeX: relativeX,
                         relativeY: relativeY,
                         type: 'audio',
@@ -917,4 +1237,14 @@ function stopPlayingRecord() {
         currentPlayingMarker.classList.remove('playing');
         currentPlayingMarker = null;
     }
+}
+
+// 调整文本域高度的函数
+function adjustTextareaHeight(textarea) {
+    // 重置高度以重新计算 scrollHeight
+    textarea.style.height = 'auto';
+    
+    // 设置新高度为实际内容高度，但不超过最大高度
+    const newHeight = Math.min(textarea.scrollHeight, 500); // 限制最大高度为300px
+    textarea.style.height = newHeight + 'px';
 }
