@@ -40,6 +40,8 @@ const notesListPanel = document.getElementById('notes-list-panel');
 const notesList = document.getElementById('notes-list');
 const currentPageEl = document.getElementById('current-page');
 const totalPagesEl = document.getElementById('total-pages');
+const showNotesBtn = document.getElementById('show-notes-btn'); // 显示备注列表按钮
+const hideNotesBtn = document.getElementById('hide-notes-btn'); // 隐藏备注列表按钮
 
 // --- 初始化 ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -62,6 +64,12 @@ async function showReaderPage(filename) {
     const fileId = filename.replace('.pdf', '');
     currentPdfFilename = filename; // 保持文件名用于后续操作
     setDefaultMode(); // 设置默认为录音模式
+    
+    // 确保备注列表显示
+    notesListPanel.classList.remove('hidden');
+    showNotesBtn.classList.remove('visible');
+    pdfContainer.classList.remove('expanded');
+    
     loadPdf(filename);
 }
 
@@ -71,6 +79,16 @@ function setupEventListeners() {
     uploadBtn.addEventListener('click', handleFileUpload);
     backToHomeBtn.addEventListener('click', showHomePage);
     
+    // 添加触屏支持
+    uploadBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        handleFileUpload();
+    });
+    backToHomeBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        showHomePage();
+    });
+    
     // 工具栏按钮事件
     prevPageBtn.addEventListener('click', () => changePage(-1));
     nextPageBtn.addEventListener('click', () => changePage(1));
@@ -79,12 +97,67 @@ function setupEventListeners() {
     fitWidthBtn.addEventListener('click', () => fitPdfToWidth());
     fitHeightBtn.addEventListener('click', () => fitPdfToHeight());
     toggleViewModeBtn.addEventListener('click', toggleViewMode);
-    modeToggle.addEventListener('change', toggleMode); // 滑块开关事件
+    modeToggle.addEventListener('change', toggleMode); // 滗块开关事件
+
+    // 添加触屏支持
+    prevPageBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        changePage(-1);
+    });
+    nextPageBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        changePage(1);
+    });
+    zoomInBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        zoomPdf(1.1);
+    });
+    zoomOutBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        zoomPdf(0.9);
+    });
+    fitWidthBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        fitPdfToWidth();
+    });
+    fitHeightBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        fitPdfToHeight();
+    });
+    toggleViewModeBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        toggleViewMode();
+    });
 
     // PDF容器事件 (用于添加备注/录音)
     pdfContainer.addEventListener('mousedown', handleCanvasMouseDown);
     pdfContainer.addEventListener('mouseup', handleCanvasMouseUp);
     pdfContainer.addEventListener('mouseleave', handleCanvasMouseLeave);
+    
+    // 触屏支持
+    pdfContainer.addEventListener('touchstart', handleCanvasTouchStart, { passive: false });
+    pdfContainer.addEventListener('touchend', handleCanvasTouchEnd);
+    pdfContainer.addEventListener('touchmove', handleCanvasTouchMove, { passive: false });
+    pdfContainer.addEventListener('touchcancel', handleCanvasTouchCancel);
+    
+    // 备注列表手动隐藏/显示事件
+    showNotesBtn.addEventListener('click', showNotesPanel);
+    hideNotesBtn.addEventListener('click', hideNotesPanel);
+    
+    // 添加触屏支持
+    showNotesBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        showNotesPanel();
+    });
+    hideNotesBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        hideNotesPanel();
+    });
+    
+    // 监听备注列表内的交互事件
+    notesList.addEventListener('click', () => {
+        // 点击备注列表时不执行任何特殊操作
+    });
 }
 
 async function loadFileList() {
@@ -115,11 +188,41 @@ async function loadFileList() {
             link.textContent = fileInfo.id; 
             link.addEventListener('click', () => showReaderPage(fileInfo.filename));
             
+            // 添加触屏支持
+            link.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                showReaderPage(fileInfo.filename);
+            });
+            
             // 创建删除按钮
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
             deleteBtn.textContent = '删除';
             deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation(); // 阻止事件冒泡，避免触发打开文件
+                if (confirm(`确定要删除文件 ${fileInfo.id} 吗？`)) {
+                    try {
+                        const deleteResponse = await fetch(`/files/${fileInfo.id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (deleteResponse.ok) {
+                            alert('文件删除成功！');
+                            loadFileList(); // 重新加载文件列表
+                        } else {
+                            const errorText = await deleteResponse.text();
+                            alert('删除失败: ' + errorText);
+                        }
+                    } catch (error) {
+                        console.error('Error deleting file:', error);
+                        alert('删除过程中发生错误。');
+                    }
+                }
+            });
+            
+            // 添加触屏支持
+            deleteBtn.addEventListener('touchend', async (e) => {
+                e.preventDefault();
                 e.stopPropagation(); // 阻止事件冒泡，避免触发打开文件
                 if (confirm(`确定要删除文件 ${fileInfo.id} 吗？`)) {
                     try {
@@ -518,6 +621,7 @@ function renderNoteMarkers() {
         // 录音标记的样式已在CSS中定义
         
         let x, y;
+        let canvasElement;
         
         // 在双页模式下，需要根据备注属于哪一页来计算位置
         if (isDualPageMode && currentPageNumber < numPages) {
@@ -527,51 +631,65 @@ function renderNoteMarkers() {
             
             if (note.page === currentPageNumber) {
                 // 备注在第一页
-                const canvasRect = firstCanvas.getBoundingClientRect();
-                const containerRect = pdfContainer.getBoundingClientRect();
-                
-                // 使用第一页画布的尺寸计算位置
-                x = note.relativeX * canvasRect.width + canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-                y = note.relativeY * canvasRect.height + canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+                canvasElement = firstCanvas;
             } else if (note.page === currentPageNumber + 1 && secondCanvas) {
                 // 备注在第二页
-                const canvasRect = secondCanvas.getBoundingClientRect();
-                const containerRect = pdfContainer.getBoundingClientRect();
-                
-                // 使用第二页画布的尺寸计算位置
-                x = note.relativeX * canvasRect.width + canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-                y = note.relativeY * canvasRect.height + canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+                canvasElement = secondCanvas;
             }
         } else {
             // 单页模式或只有一页的情况
-            const canvasRect = pdfCanvas.getBoundingClientRect();
-            const containerRect = pdfContainer.getBoundingClientRect();
-            
-            // 使用画布的尺寸计算位置
-            x = note.relativeX * canvasRect.width + canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-            y = note.relativeY * canvasRect.height + canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            canvasElement = pdfCanvas;
         }
         
-        marker.style.left = `${x}px`;
-        marker.style.top = `${y}px`;
-        
-        // 添加点击事件
-        marker.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (note.type === 'text') {
-                showNotePopup(note, marker);
-            } else if (note.type === 'audio') {
-                playRecord(note, marker);
-            }
-        });
-        
-        pdfContainer.appendChild(marker);
+        // 如果找到了对应的canvas元素，则计算标记位置
+        if (canvasElement) {
+            // 使用相对坐标计算相对于canvas的位置
+            x = note.relativeX * canvasElement.offsetWidth;
+            y = note.relativeY * canvasElement.offsetHeight;
+            
+            // 设置标记位置
+            marker.style.left = `${canvasElement.offsetLeft + x}px`;
+            marker.style.top = `${canvasElement.offsetTop + y}px`;
+            
+            // 添加点击事件（鼠标和触屏）
+            marker.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (note.type === 'text') {
+                    showNotePopup(note, marker);
+                } else if (note.type === 'audio') {
+                    playRecord(note, marker);
+                }
+            });
+            
+            // 添加触屏支持
+            marker.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+            });
+            
+            marker.addEventListener('touchend', (e) => {
+                e.stopPropagation();
+                if (note.type === 'text') {
+                    showNotePopup(note, marker);
+                } else if (note.type === 'audio') {
+                    playRecord(note, marker);
+                }
+            });
+            
+            // 将标记添加到pdfContainer中
+            pdfContainer.appendChild(marker);
+        }
     });
     
     updateNotesList(); // 更新左侧备注列表
 }
 
 function updateNotesList() {
+    // 保存当前展开的抽屉菜单状态
+    const openDrawerId = (() => {
+        const openDrawer = document.querySelector('.drawer-menu.show');
+        return openDrawer ? openDrawer.closest('.note-item').dataset.noteId : null;
+    })();
+    
     notesList.innerHTML = '';
     // 筛选出当前页面的备注（在双页模式下包括两个页面）
     let currentPageNotes;
@@ -624,19 +742,43 @@ function updateNotesList() {
         const drawerMenu = document.createElement('div');
         drawerMenu.className = 'drawer-menu';
         
+        // 如果这是之前展开的抽屉，保持展开状态
+        if (openDrawerId === note.id) {
+            drawerMenu.classList.add('show');
+        }
+        
         const deleteItem = document.createElement('div');
         deleteItem.className = 'menu-item delete';
         deleteItem.textContent = '删除';
         deleteItem.addEventListener('click', (e) => {
             e.stopPropagation();
             deleteNote(note.id);
-            drawerMenu.classList.remove('show');
+        });
+        
+        // 添加触屏支持
+        deleteItem.addEventListener('touchend', (e) => {
+            e.stopPropagation();
+            deleteNote(note.id);
         });
         
         drawerMenu.appendChild(deleteItem);
         
         // 点击更多按钮显示/隐藏抽屉菜单
         moreButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 隐藏其他所有抽屉菜单
+            document.querySelectorAll('.drawer-menu').forEach(menu => {
+                if (menu !== drawerMenu) {
+                    menu.classList.remove('show');
+                }
+            });
+            
+            // 切换当前抽屉菜单
+            drawerMenu.classList.toggle('show');
+        });
+        
+        // 添加触屏支持
+        moreButton.addEventListener('touchend', (e) => {
             e.stopPropagation();
             // 隐藏其他所有抽屉菜单
             document.querySelectorAll('.drawer-menu').forEach(menu => {
@@ -662,6 +804,42 @@ function updateNotesList() {
                 return;
             }
             
+            // 隐藏所有抽屉菜单
+            document.querySelectorAll('.drawer-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+            
+            // TODO: 实现定位到备注标记的逻辑
+            // 例如，高亮标记或滚动到标记位置
+            const marker = pdfContainer.querySelector(`.note-marker[data-id="${note.id}"]`);
+            if (marker) {
+                marker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                marker.style.transform = 'translate(-50%, -50%) scale(1.5)'; // 放大效果
+                setTimeout(() => {
+                     marker.style.transform = 'translate(-50%, -50%)'; // 恢复
+                }, 500);
+                
+                // 如果是文字备注，弹出悬浮框
+                if (note.type === 'text') {
+                    showNotePopup(note, marker);
+                } else if (note.type === 'audio') {
+                    playRecord(note, marker);
+                }
+            }
+        });
+        
+        // 添加触屏支持
+        listItem.addEventListener('touchend', (e) => {
+            // 如果点击的是更多按钮或抽屉菜单，不执行定位操作
+            if (e.target === moreButton || drawerMenu.contains(e.target)) {
+                return;
+            }
+            
+            // 隐藏所有抽屉菜单
+            document.querySelectorAll('.drawer-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+            
             // TODO: 实现定位到备注标记的逻辑
             // 例如，高亮标记或滚动到标记位置
             const marker = pdfContainer.querySelector(`.note-marker[data-id="${note.id}"]`);
@@ -684,14 +862,39 @@ function updateNotesList() {
         notesList.appendChild(listItem);
     });
     
-    // 点击页面其他地方隐藏所有抽屉菜单
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.more-button') && !e.target.closest('.drawer-menu')) {
-            document.querySelectorAll('.drawer-menu').forEach(menu => {
-                menu.classList.remove('show');
-            });
-        }
-    });
+    // 只在初始化时添加一次全局点击监听器，避免重复添加
+    if (!document.body.hasAttribute('notes-list-click-handler')) {
+        document.body.setAttribute('notes-list-click-handler', 'true');
+        // 点击页面其他地方隐藏所有抽屉菜单
+        document.addEventListener('click', (e) => {
+            // 只有当点击的元素不在抽屉菜单相关的元素内时才隐藏抽屉
+            const clickedElement = e.target;
+            const isDrawerElement = clickedElement.closest('.more-button') || 
+                                  clickedElement.closest('.drawer-menu') || 
+                                  clickedElement.closest('.menu-item');
+            
+            if (!isDrawerElement) {
+                document.querySelectorAll('.drawer-menu').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+        
+        // 添加触屏支持
+        document.addEventListener('touchend', (e) => {
+            // 只有当点击的元素不在抽屉菜单相关的元素内时才隐藏抽屉
+            const clickedElement = e.target;
+            const isDrawerElement = clickedElement.closest('.more-button') || 
+                                  clickedElement.closest('.drawer-menu') || 
+                                  clickedElement.closest('.menu-item');
+            
+            if (!isDrawerElement) {
+                document.querySelectorAll('.drawer-menu').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+    }
 }
 
 // --- 悬浮备注框逻辑 ---
@@ -739,17 +942,22 @@ function showNotePopup(note, markerElement) {
     makePopupDraggable(popup);
     
     // 绑定按钮事件
-    popup.querySelector('.edit-btn').addEventListener('click', () => {
+    const editBtn = popup.querySelector('.edit-btn');
+    const deleteBtn = popup.querySelector('.delete-btn');
+    const pinBtn = popup.querySelector('.pin-btn');
+    const closeBtn = popup.querySelector('.close-btn');
+    
+    editBtn.addEventListener('click', () => {
         textarea.readOnly = false;
         textarea.focus();
     });
     
-    popup.querySelector('.delete-btn').addEventListener('click', () => {
+    deleteBtn.addEventListener('click', () => {
         deleteNote(note.id);
         popup.remove();
     });
     
-    popup.querySelector('.pin-btn').addEventListener('click', function() {
+    pinBtn.addEventListener('click', function() {
         const isPinned = this.textContent === '📍';
         this.textContent = isPinned ? '📌' : '📍';
         // 这里可以添加钉住/取消钉住的逻辑，例如添加一个类
@@ -760,7 +968,37 @@ function showNotePopup(note, markerElement) {
         }
     });
     
-    popup.querySelector('.close-btn').addEventListener('click', () => {
+    closeBtn.addEventListener('click', () => {
+        popup.remove();
+    });
+    
+    // 添加触屏支持
+    editBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        textarea.readOnly = false;
+        textarea.focus();
+    });
+    
+    deleteBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        deleteNote(note.id);
+        popup.remove();
+    });
+    
+    pinBtn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        const isPinned = this.textContent === '📍';
+        this.textContent = isPinned ? '📌' : '📍';
+        // 这里可以添加钉住/取消钉住的逻辑，例如添加一个类
+        if (isPinned) {
+            popup.classList.remove('pinned');
+        } else {
+            popup.classList.add('pinned');
+        }
+    });
+    
+    closeBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
         popup.remove();
     });
     
@@ -788,7 +1026,7 @@ function showNotePopup(note, markerElement) {
     if (!note.content) {
         // 默认钉住新备注框
         popup.classList.add('pinned');
-        popup.querySelector('.pin-btn').textContent = '📍';
+        pinBtn.textContent = '📍';
         
         // 新备注默认可编辑
         textarea.readOnly = false;
@@ -801,6 +1039,14 @@ function showNotePopup(note, markerElement) {
                 pdfContainer.removeEventListener('click', closeListener);
             }
         });
+        
+        // 添加触屏支持
+        pdfContainer.addEventListener('touchend', function closeListener(e) {
+            if (!popup.contains(e.target) && !popup.classList.contains('pinned')) {
+                popup.remove();
+                pdfContainer.removeEventListener('touchend', closeListener);
+            }
+        });
     }
     
     pdfContainer.appendChild(popup);
@@ -810,17 +1056,38 @@ function makePopupDraggable(popupElement) {
     const header = popupElement.querySelector('.popup-header');
     let isDragging = false;
     let offsetX, offsetY;
+    let startX, startY;
 
+    // 鼠标事件
     header.addEventListener('mousedown', (e) => {
         e.stopPropagation(); // 阻止事件冒泡到容器的 mousedown 处理器
         isDragging = true;
         isDraggingPopup = true; // 设置拖动标志
+        startX = e.clientX;
+        startY = e.clientY;
         offsetX = e.clientX - popupElement.getBoundingClientRect().left;
         offsetY = e.clientY - popupElement.getBoundingClientRect().top;
         // 将拖动的元素置于顶层
         popupElement.style.zIndex = 1000;
     });
 
+    // 触屏事件
+    header.addEventListener('touchstart', (e) => {
+        e.stopPropagation(); // 阻止事件冒泡
+        if (e.touches.length === 1) {
+            isDragging = true;
+            isDraggingPopup = true; // 设置拖动标志
+            const touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            offsetX = touch.clientX - popupElement.getBoundingClientRect().left;
+            offsetY = touch.clientY - popupElement.getBoundingClientRect().top;
+            // 将拖动的元素置于顶层
+            popupElement.style.zIndex = 1000;
+        }
+    }, { passive: false });
+
+    // 鼠标移动事件
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         const containerRect = pdfContainer.getBoundingClientRect();
@@ -835,7 +1102,37 @@ function makePopupDraggable(popupElement) {
         popupElement.style.top = `${y}px`;
     });
 
+    // 触屏移动事件
+    document.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        if (e.touches.length === 1) {
+            e.preventDefault(); // 阻止默认的滚动行为
+            const containerRect = pdfContainer.getBoundingClientRect();
+            const touch = e.touches[0];
+            let x = touch.clientX - containerRect.left - offsetX;
+            let y = touch.clientY - containerRect.top - offsetY;
+            
+            // 边界限制
+            x = Math.max(0, Math.min(x, pdfContainer.clientWidth - popupElement.offsetWidth));
+            y = Math.max(0, Math.min(y, pdfContainer.clientHeight - popupElement.offsetHeight));
+            
+            popupElement.style.left = `${x}px`;
+            popupElement.style.top = `${y}px`;
+        }
+    }, { passive: false });
+
+    // 鼠标释放事件
     document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            isDraggingPopup = false; // 清除拖动标志
+            // 恢复原来的 z-index
+            popupElement.style.zIndex = 100;
+        }
+    });
+
+    // 触屏释放事件
+    document.addEventListener('touchend', () => {
         if (isDragging) {
             isDragging = false;
             isDraggingPopup = false; // 清除拖动标志
@@ -854,6 +1151,7 @@ function deleteNote(noteId) {
 
 // --- 画布交互 (添加备注/录音) ---
 
+// 鼠标事件处理
 function handleCanvasMouseDown(e) {
     if (e.button !== 0) return; // 只处理左键
     
@@ -862,11 +1160,57 @@ function handleCanvasMouseDown(e) {
         return;
     }
     
-    // 计算相对于PDF容器的坐标
-    const containerRect = pdfContainer.getBoundingClientRect();
-    const x = e.clientX - containerRect.left + pdfContainer.scrollLeft;
-    const y = e.clientY - containerRect.top + pdfContainer.scrollTop;
+    // 获取鼠标相对于页面的坐标
+    const x = e.clientX;
+    const y = e.clientY;
     
+    handleCanvasStart(x, y);
+}
+
+function handleCanvasMouseUp(e) {
+    handleCanvasEnd();
+}
+
+function handleCanvasMouseLeave(e) {
+    handleCanvasCancel();
+}
+
+// 触屏事件处理
+function handleCanvasTouchStart(e) {
+    e.preventDefault(); // 阻止默认的滚动行为
+    
+    if (e.touches.length !== 1) return; // 只处理单指触摸
+    
+    // 如果正在拖动悬浮框，则不处理
+    if (isDraggingPopup) {
+        return;
+    }
+    
+    // 获取触摸点相对于页面的坐标
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    
+    handleCanvasStart(x, y);
+}
+
+function handleCanvasTouchEnd(e) {
+    handleCanvasEnd();
+}
+
+function handleCanvasTouchMove(e) {
+    // 如果正在长按触发备注添加，则阻止默认滚动行为
+    if (longPressTimer || isLongPressTriggered) {
+        e.preventDefault();
+    }
+}
+
+function handleCanvasTouchCancel(e) {
+    handleCanvasCancel();
+}
+
+// 通用的画布开始处理函数
+function handleCanvasStart(x, y) {
     let isInCanvas = false;
     
     if (isDualPageMode && currentPageNumber < numPages) {
@@ -876,8 +1220,8 @@ function handleCanvasMouseDown(e) {
         
         // 检查第一个canvas
         const firstCanvasRect = firstCanvas.getBoundingClientRect();
-        const firstCanvasLeft = firstCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const firstCanvasTop = firstCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const firstCanvasLeft = firstCanvasRect.left;
+        const firstCanvasTop = firstCanvasRect.top;
         const firstCanvasRight = firstCanvasLeft + firstCanvas.offsetWidth;
         const firstCanvasBottom = firstCanvasTop + firstCanvas.offsetHeight;
         
@@ -888,8 +1232,8 @@ function handleCanvasMouseDown(e) {
         // 如果第二页存在，检查第二个canvas
         if (secondCanvas) {
             const secondCanvasRect = secondCanvas.getBoundingClientRect();
-            const secondCanvasLeft = secondCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-            const secondCanvasTop = secondCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            const secondCanvasLeft = secondCanvasRect.left;
+            const secondCanvasTop = secondCanvasRect.top;
             const secondCanvasRight = secondCanvasLeft + secondCanvas.offsetWidth;
             const secondCanvasBottom = secondCanvasTop + secondCanvas.offsetHeight;
             
@@ -900,8 +1244,8 @@ function handleCanvasMouseDown(e) {
     } else {
         // 单页模式下，检查是否在canvas范围内
         const canvasRect = pdfCanvas.getBoundingClientRect();
-        const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const canvasLeft = canvasRect.left;
+        const canvasTop = canvasRect.top;
         const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
         const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
         
@@ -916,8 +1260,8 @@ function handleCanvasMouseDown(e) {
     }
     
     // 检查是否点击在已有备注标记上
-    const clickedElement = e.target;
-    if (clickedElement.classList.contains('note-marker')) {
+    const elementFromPoint = document.elementFromPoint(x, y);
+    if (elementFromPoint && elementFromPoint.classList.contains('note-marker')) {
         // 点击标记已在标记的点击事件中处理
         return;
     }
@@ -927,8 +1271,8 @@ function handleCanvasMouseDown(e) {
     for (let i = 0; i < popups.length; i++) {
         const popup = popups[i];
         const popupRect = popup.getBoundingClientRect();
-        const popupLeft = popupRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const popupTop = popupRect.top - containerRect.top + pdfContainer.scrollTop;
+        const popupLeft = popupRect.left;
+        const popupTop = popupRect.top;
         const popupRight = popupLeft + popupRect.width;
         const popupBottom = popupTop + popupRect.height;
         
@@ -950,7 +1294,8 @@ function handleCanvasMouseDown(e) {
     }, isRecordMode ? 1000 : 500); // 录音模式1秒，文字备注0.5秒
 }
 
-function handleCanvasMouseUp(e) {
+// 通用的画布结束处理函数
+function handleCanvasEnd() {
     if (longPressTimer) {
         clearTimeout(longPressTimer);
         longPressTimer = null;
@@ -974,7 +1319,8 @@ function handleCanvasMouseUp(e) {
     }
 }
 
-function handleCanvasMouseLeave() {
+// 通用的画布取消处理函数
+function handleCanvasCancel() {
     if (longPressTimer) {
         clearTimeout(longPressTimer);
         longPressTimer = null;
@@ -982,7 +1328,7 @@ function handleCanvasMouseLeave() {
     
     // 如果正在录音，则停止录音
     if (mediaRecorder && mediaRecorder.state === 'recording') {
-        console.log('Stopping recording due to mouse leave...');
+        console.log('Stopping recording due to touch cancel...');
         mediaRecorder.stop();
     }
     
@@ -990,9 +1336,6 @@ function handleCanvasMouseLeave() {
 }
 
 function addTextNote(x, y) {
-    // 检查坐标是否在canvas范围内
-    const containerRect = pdfContainer.getBoundingClientRect();
-    
     let targetPage = currentPageNumber;
     let relativeX, relativeY;
     
@@ -1002,8 +1345,8 @@ function addTextNote(x, y) {
         const secondCanvas = document.getElementById('pdf-canvas-second');
         
         const firstCanvasRect = firstCanvas.getBoundingClientRect();
-        const firstCanvasLeft = firstCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const firstCanvasTop = firstCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const firstCanvasLeft = firstCanvasRect.left;
+        const firstCanvasTop = firstCanvasRect.top;
         const firstCanvasRight = firstCanvasLeft + firstCanvas.offsetWidth;
         const firstCanvasBottom = firstCanvasTop + firstCanvas.offsetHeight;
         
@@ -1017,8 +1360,8 @@ function addTextNote(x, y) {
         // 如果第二页存在，检查是否点击在第二页上
         else if (secondCanvas) {
             const secondCanvasRect = secondCanvas.getBoundingClientRect();
-            const secondCanvasLeft = secondCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-            const secondCanvasTop = secondCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            const secondCanvasLeft = secondCanvasRect.left;
+            const secondCanvasTop = secondCanvasRect.top;
             const secondCanvasRight = secondCanvasLeft + secondCanvas.offsetWidth;
             const secondCanvasBottom = secondCanvasTop + secondCanvas.offsetHeight;
             
@@ -1042,8 +1385,8 @@ function addTextNote(x, y) {
     // 单页模式
     else {
         const canvasRect = pdfCanvas.getBoundingClientRect();
-        const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const canvasLeft = canvasRect.left;
+        const canvasTop = canvasRect.top;
         const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
         const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
         
@@ -1104,9 +1447,6 @@ function getRandomNoteColor() {
 async function startRecording(x, y) {
     console.log('Starting recording at coordinates:', x, y);
     
-    // 检查坐标是否在canvas范围内并确定目标页面
-    const containerRect = pdfContainer.getBoundingClientRect();
-    
     let targetPage = currentPageNumber;
     let relativeX, relativeY;
     
@@ -1116,8 +1456,8 @@ async function startRecording(x, y) {
         const secondCanvas = document.getElementById('pdf-canvas-second');
         
         const firstCanvasRect = firstCanvas.getBoundingClientRect();
-        const firstCanvasLeft = firstCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const firstCanvasTop = firstCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const firstCanvasLeft = firstCanvasRect.left;
+        const firstCanvasTop = firstCanvasRect.top;
         const firstCanvasRight = firstCanvasLeft + firstCanvas.offsetWidth;
         const firstCanvasBottom = firstCanvasTop + firstCanvas.offsetHeight;
         
@@ -1131,8 +1471,8 @@ async function startRecording(x, y) {
         // 如果第二页存在，检查是否点击在第二页上
         else if (secondCanvas) {
             const secondCanvasRect = secondCanvas.getBoundingClientRect();
-            const secondCanvasLeft = secondCanvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-            const secondCanvasTop = secondCanvasRect.top - containerRect.top + pdfContainer.scrollTop;
+            const secondCanvasLeft = secondCanvasRect.left;
+            const secondCanvasTop = secondCanvasRect.top;
             const secondCanvasRight = secondCanvasLeft + secondCanvas.offsetWidth;
             const secondCanvasBottom = secondCanvasTop + secondCanvas.offsetHeight;
             
@@ -1158,8 +1498,8 @@ async function startRecording(x, y) {
     // 单页模式
     else {
         const canvasRect = pdfCanvas.getBoundingClientRect();
-        const canvasLeft = canvasRect.left - containerRect.left + pdfContainer.scrollLeft;
-        const canvasTop = canvasRect.top - containerRect.top + pdfContainer.scrollTop;
+        const canvasLeft = canvasRect.left;
+        const canvasTop = canvasRect.top;
         const canvasRight = canvasLeft + pdfCanvas.offsetWidth;
         const canvasBottom = canvasTop + pdfCanvas.offsetHeight;
         
@@ -1287,4 +1627,30 @@ function adjustTextareaHeight(textarea) {
     // 设置新高度为实际内容高度，但不超过最大高度
     const newHeight = Math.min(textarea.scrollHeight, 500); // 限制最大高度为300px
     textarea.style.height = newHeight + 'px';
+}
+
+// --- 备注列表手动隐藏/显示功能 ---
+
+// 隐藏备注列表
+function hideNotesPanel() {
+    notesListPanel.classList.add('hidden');
+    showNotesBtn.classList.add('visible');
+    pdfContainer.classList.add('expanded');
+    
+    // 重新渲染备注标记以适应新的布局
+    setTimeout(() => {
+        renderNoteMarkers();
+    }, 300); // 等待过渡动画完成
+}
+
+// 显示备注列表
+function showNotesPanel() {
+    notesListPanel.classList.remove('hidden');
+    showNotesBtn.classList.remove('visible');
+    pdfContainer.classList.remove('expanded');
+    
+    // 重新渲染备注标记以适应新的布局
+    setTimeout(() => {
+        renderNoteMarkers();
+    }, 300); // 等待过渡动画完成
 }

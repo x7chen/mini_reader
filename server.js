@@ -123,31 +123,6 @@ app.delete('/files/:id', async (req, res) => {
   }
 });
 
-// 获取所有上传的 PDF 文件列表
-app.get('/files', async (req, res) => {
-  try {
-    const files = await fs.readdir(path.join(__dirname, 'uploads'));
-    // 过滤出 .pdf 文件
-    const pdfFiles = files.filter(file => path.extname(file).toLowerCase() === '.pdf');
-    
-    // 为每个文件生成信息对象
-    const fileInfoPromises = pdfFiles.map(async (filename) => {
-      const fileId = path.parse(filename).name; // ID 就是文件名（不含扩展名）
-      // 可以在这里添加更多文件信息，如上传时间等
-      return {
-        id: fileId,
-        filename: filename
-      };
-    });
-    
-    const fileInfos = await Promise.all(fileInfoPromises);
-    res.json(fileInfos);
-  } catch (error) {
-    console.error('Error reading uploads directory:', error);
-    res.status(500).send('Internal Server Error');
-  }
-});
-
 // 获取指定 PDF 文件的备注数据
 app.get('/data/:datafilename', async (req, res) => {
   const dataFilePath = path.join(__dirname, 'data', req.params.datafilename);

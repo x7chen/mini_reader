@@ -44,9 +44,13 @@
             </div>
             <div id="main-content">
                 <div id="notes-list-panel">
-                    <h3>备注列表</h3>
+                    <div class="notes-header">
+                        <h3>备注列表</h3>
+                        <button id="hide-notes-btn" title="隐藏备注列表">◀</button>
+                    </div>
                     <ul id="notes-list"></ul>
                 </div>
+                <button id="show-notes-btn" title="显示备注列表">📋</button>
                 <div id="pdf-container">
                     <canvas id="pdf-canvas"></canvas>
                 </div>
