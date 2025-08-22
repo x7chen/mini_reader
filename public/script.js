@@ -96,15 +96,18 @@ async function loadFileList() {
             const fileItem = document.createElement('div');
             fileItem.className = 'pdf-item';
             
-            // 创建缩略图 (这里简化处理，实际应用中需要后端生成或前端使用pdf.js生成)
+            // 创建缩略图容器
             const thumbnail = document.createElement('div');
             thumbnail.className = 'pdf-thumbnail';
-            thumbnail.style.backgroundColor = '#ddd';
-            thumbnail.textContent = 'PDF';
-            thumbnail.style.display = 'flex';
-            thumbnail.style.alignItems = 'center';
-            thumbnail.style.justifyContent = 'center';
-            thumbnail.style.color = '#666';
+            
+            // 创建缩略图图像元素
+            const thumbnailImg = document.createElement('img');
+            thumbnailImg.src = `/uploads/${fileInfo.filename}`;
+            thumbnailImg.alt = 'PDF封面';
+            thumbnailImg.className = 'pdf-thumbnail-img';
+            
+            // 使用pdf.js生成PDF第一页的缩略图
+            generatePdfThumbnail(`/uploads/${fileInfo.filename}`, thumbnailImg);
             
             const link = document.createElement('span');
             link.className = 'pdf-link';
@@ -138,6 +141,7 @@ async function loadFileList() {
                 }
             });
             
+            thumbnail.appendChild(thumbnailImg);
             fileItem.appendChild(thumbnail);
             fileItem.appendChild(link);
             fileItem.appendChild(deleteBtn);
@@ -146,6 +150,42 @@ async function loadFileList() {
     } catch (error) {
         console.error('Error loading file list:', error);
         fileList.innerHTML = '<p>加载文件列表失败。</p>';
+    }
+}
+
+// 生成PDF缩略图的函数
+async function generatePdfThumbnail(pdfUrl, imgElement) {
+    try {
+        // 获取PDF数据
+        const pdfData = await fetch(pdfUrl).then(res => res.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        
+        // 获取第一页
+        const page = await pdf.getPage(1);
+        
+        // 设置缩放比例，使宽度为100px
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = 100 / viewport.width;
+        const scaledViewport = page.getViewport({ scale: scale });
+        
+        // 创建canvas用于渲染
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = scaledViewport.height;
+        canvas.width = scaledViewport.width;
+        
+        // 渲染页面到canvas
+        await page.render({
+            canvasContext: context,
+            viewport: scaledViewport
+        }).promise;
+        
+        // 将canvas内容转换为图片URL
+        imgElement.src = canvas.toDataURL();
+    } catch (error) {
+        console.error('Error generating PDF thumbnail:', error);
+        // 出错时显示默认占位符
+        imgElement.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="140" viewBox="0 0 100 140"><rect width="100" height="140" fill="%23ddd"/><text x="50" y="70" font-family="Arial" font-size="14" fill="%23666" text-anchor="middle" dominant-baseline="middle">PDF</text></svg>';
     }
 }
 
